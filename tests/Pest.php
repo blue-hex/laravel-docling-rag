@@ -1,5 +1,5 @@
 <?php
 
-use VendorName\Skeleton\Tests\TestCase;
+use BlueHex\DoclingRag\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);

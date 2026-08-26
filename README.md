@@ -1,78 +1,102 @@
-# :package_description
+# Document RAG for Laravel via Docling-serve, with Gotenberg as a conversion fallback
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-[![GitHub Tests Action Status](https://github.com/spatie/package-skeleton-laravel/actions/workflows/run-tests.yml/badge.svg)](https://github.com/:vendor_slug/:package_slug/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://github.com/spatie/package-skeleton-laravel/actions/workflows/fix-php-code-style-issues.yml/badge.svg)](https://github.com/:vendor_slug/:package_slug/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-<!--delete-->
----
-This repo can be used to scaffold a Laravel package. Follow these steps to get started:
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/blue-hex/laravel-docling-rag.svg?style=flat-square)](https://packagist.org/packages/blue-hex/laravel-docling-rag)
+[![GitHub Tests Action Status](https://github.com/blue-hex/laravel-docling-rag/actions/workflows/run-tests.yml/badge.svg)](https://github.com/blue-hex/laravel-docling-rag/actions?query=workflow%3Arun-tests+branch%3Amain)
+[![GitHub Code Style Action Status](https://github.com/blue-hex/laravel-docling-rag/actions/workflows/fix-php-code-style-issues.yml/badge.svg)](https://github.com/blue-hex/laravel-docling-rag/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
+[![Total Downloads](https://img.shields.io/packagist/dt/blue-hex/laravel-docling-rag.svg?style=flat-square)](https://packagist.org/packages/blue-hex/laravel-docling-rag)
 
-1. Press the "Use this template" button at the top of this repo to create a new repo with the contents of this skeleton.
-2. Run "php ./configure.php" to run a script that will replace all placeholders throughout all the files.
+Turns uploaded documents into cited, embeddable chunks backed by Postgres/pgvector. The package owns conversion, chunking, embedding, and storage. The host app keeps its domain models, tenancy, auth, and agents.
 
-   To run it unattended — from a script, or by handing it to a coding agent — pass `--no-interaction`
-   (`-n`) and the answers as options. It never prompts, and exits non-zero with a message naming any
-   option it still needs:
+Retrieval (hybrid search and the `SearchDocuments` tool) is not in this release.
 
-   ```bash
-   php ./configure.php -n --vendor-name="Spatie" --package-name="laravel-ray"
-   ```
+## Requirements
 
-   Run "php ./configure.php --help" for the full list of options.
-3. Have fun creating your package.
-4. If you need help creating a package, consider picking up our <a href="https://laravelpackage.training">Laravel Package Training</a> video course.
----
-<!--/delete-->
-This is where your description should go. Limit it to a paragraph or two. Consider adding a small example.
+- PHP 8.4+
+- Laravel 12 or 13
+- PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) >= 0.8
+- A reachable [docling-serve](https://github.com/docling-project/docling-serve) instance
+- An embedding provider configured in [laravel/ai](https://github.com/laravel/ai)
+- [Gotenberg](https://gotenberg.dev) only when the conversion fallback is enabled
 
-## Support us
-
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/:package_name.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/:package_name)
-
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+This package does not manage containers. Point config at URLs you already run.
 
 ## Installation
 
-You can install the package via composer:
-
 ```bash
-composer require :vendor_slug/:package_slug
-```
-
-You can publish and run the migrations with:
-
-```bash
-php artisan vendor:publish --tag=":package_slug-migrations"
+composer require blue-hex/laravel-docling-rag
+php artisan rag:install
 php artisan migrate
 ```
 
-You can publish the config file with:
+Enable the Gotenberg fallback and publish the example Compose file:
 
 ```bash
-php artisan vendor:publish --tag=":package_slug-config"
+php artisan rag:install --with-gotenberg
 ```
 
-This is the contents of the published config file:
-
-```php
-return [
-];
-```
-
-Optionally, you can publish the views using
+After embeddings land, build the search indexes (HNSW + GIN) at a time you choose:
 
 ```bash
-php artisan vendor:publish --tag=":package_slug-views"
+php artisan rag:index
 ```
+
+Check Docling, Gotenberg (if enabled), and pgvector:
+
+```bash
+php artisan rag:health
+```
+
+## Configuration
+
+Publish `config/docling-rag.php` and set:
+
+- `DOCLING_URL` — docling-serve base URL (default `http://localhost:5001`)
+- `DOCLING_API_KEY` — sent as `X-Api-Key` when the server requires it
+- `DOCLING_RAG_GOTENBERG_ENABLED` / `GOTENBERG_URL` — fallback converter
+- `DOCLING_RAG_EMBEDDING_MODEL` / `DOCLING_RAG_EMBEDDING_DIMENSIONS` — default `text-embedding-3-small` / `1536`
+- `DOCLING_RAG_EMBEDDING_HALFVEC` — use `halfvec` when you need more than 2000 dimensions
+- `DOCLING_RAG_MAX_PAGES` / `DOCLING_RAG_MAX_CHUNKS` — fail fast instead of burning an embedding bill
+
+An example Compose file ships as `docker-compose.example.yml` (`docling-serve`, plus `gotenberg` under the `gotenberg` profile).
 
 ## Usage
 
+Add the trait to the host model that owns documents:
+
 ```php
-$:variable = new VendorName\Skeleton();
-echo $:variable->echoPhrase('Hello, VendorName!');
+use BlueHex\DoclingRag\Support\HasRagDocuments;
+use Illuminate\Database\Eloquent\Model;
+
+class DataSource extends Model
+{
+    use HasRagDocuments;
+}
+```
+
+Ingest a file. Re-uploads of the same bytes for the same owner are idempotent:
+
+```php
+use BlueHex\DoclingRag\Facades\Rag;
+
+$document = Rag::ingest($request->file('document'), owner: $dataSource);
+// or
+$document = $dataSource->ingestDocument($request->file('document'));
+```
+
+Native Docling formats (PDF, Office, HTML, Markdown, images, …) go straight to docling-serve hybrid chunking. Anything else goes through Gotenberg → PDF when enabled; otherwise ingestion raises `UnsupportedFormatException`.
+
+Listen for host-side side effects (credits, traces, notifications):
+
+```php
+use BlueHex\DoclingRag\Events\DocumentIngested;
+use BlueHex\DoclingRag\Events\IngestionFailed;
+```
+
+Change embedding models with a deliberate re-embed, never a live mix:
+
+```bash
+php artisan rag:reembed
+php artisan rag:reembed 42
 ```
 
 ## Testing
@@ -81,21 +105,15 @@ echo $:variable->echoPhrase('Hello, VendorName!');
 composer test
 ```
 
+The fast suite uses SQLite, `Http::fake()`, and `Embeddings::fake()`. Set `DOCLING_LIVE_URL` to run the opt-in live Docling contract test.
+
 ## Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
 
-## Contributing
-
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
-
-## Security Vulnerabilities
-
-Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
-
 ## Credits
 
-- [:author_name](https://github.com/:author_username)
+- [Rohan Krishna](https://github.com/rohankrishna)
 - [All Contributors](../../contributors)
 
 ## License

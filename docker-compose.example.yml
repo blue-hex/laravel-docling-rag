@@ -1,0 +1,14 @@
+services:
+  docling-serve:
+    image: ghcr.io/docling-project/docling-serve:latest
+    ports:
+      - "5001:5001"
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "false"
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    ports:
+      - "3000:3000"
+    profiles:
+      - gotenberg
