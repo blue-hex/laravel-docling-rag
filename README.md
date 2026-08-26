@@ -16,7 +16,54 @@ Turns uploaded documents into cited, embeddable chunks backed by Postgres/pgvect
 - An embedding provider configured in [laravel/ai](https://github.com/laravel/ai)
 - [Gotenberg](https://gotenberg.dev) only when the conversion fallback is enabled
 
-This package does not manage containers. Point config at URLs you already run.
+This package does not manage containers. Point config at URLs you already run. If you need help in getting started with Docker Compose, refer to the sample configuration below.
+
+## Sample Docker Compose
+
+```yaml
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: laravel-docling-rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: laravel_docling_rag
+    ports:
+      # Host port is overridable to avoid clashing with an existing Postgres.
+      # Default is 5432; set POSTGRES_PORT to remap (e.g. POSTGRES_PORT=5433 docker compose up -d).
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - laravel_docling_rag_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  docling-serve:
+    image: ghcr.io/docling-project/docling-serve:latest
+    container_name: laravel-docling-rag-docling-serve
+    restart: unless-stopped
+    ports:
+      - '${DOCLING_PORT:-5001}:5001'
+    environment:
+      DOCLING_SERVE_ENABLE_UI: 'false'
+
+  gotenberg:
+    image: gotenberg/gotenberg:latest
+    container_name: laravel-docling-rag-gotenberg
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    profiles:
+      - gotenberg
+
+volumes:
+  laravel_docling_rag_pgdata:
+    driver: local
+```
 
 ## Installation
 
