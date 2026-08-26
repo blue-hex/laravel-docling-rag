@@ -43,4 +43,32 @@ return [
     'fts' => [
         'language' => env('DOCLING_RAG_FTS_LANGUAGE', 'english'),
     ],
+
+    'retrieval' => [
+        // Rows pulled from each retriever (vector + FTS) before fusion.
+        'candidates' => (int) env('DOCLING_RAG_RETRIEVAL_CANDIDATES', 50),
+
+        // RRF constant. Larger flattens the contribution of top ranks.
+        'rrf_k' => (int) env('DOCLING_RAG_RETRIEVAL_RRF_K', 60),
+
+        // Default number of chunks returned to the caller.
+        'k' => (int) env('DOCLING_RAG_RETRIEVAL_K', 8),
+
+        // Cap chunks returned from any single document. 0 disables.
+        'per_document_cap' => (int) env('DOCLING_RAG_RETRIEVAL_PER_DOCUMENT_CAP', 3),
+
+        // pgvector filtered-ANN recovery. off | relaxed_order | strict_order.
+        'iterative_scan' => env('DOCLING_RAG_RETRIEVAL_ITERATIVE_SCAN', 'relaxed_order'),
+
+        // Query-embedding cache TTL in seconds.
+        'cache_ttl' => (int) env('DOCLING_RAG_RETRIEVAL_CACHE_TTL', 300),
+
+        'rerank' => [
+            'enabled' => (bool) env('DOCLING_RAG_RERANK_ENABLED', false),
+            'provider' => env('DOCLING_RAG_RERANK_PROVIDER'),
+            'model' => env('DOCLING_RAG_RERANK_MODEL'),
+            // Fused results reranked before capping.
+            'top_n' => (int) env('DOCLING_RAG_RERANK_TOP_N', 30),
+        ],
+    ],
 ];

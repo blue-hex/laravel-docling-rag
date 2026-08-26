@@ -2,16 +2,45 @@
 
 namespace BlueHex\DoclingRag;
 
+use BlueHex\DoclingRag\Contracts\SearchesChunks;
 use BlueHex\DoclingRag\Enums\DocumentStatus;
 use BlueHex\DoclingRag\Exceptions\IngestionException;
 use BlueHex\DoclingRag\Jobs\IngestDocumentJob;
 use BlueHex\DoclingRag\Models\RagDocument;
+use BlueHex\DoclingRag\Retrieval\ChunkResult;
+use BlueHex\DoclingRag\Retrieval\FakeSearcher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
 class Rag
 {
+    /**
+     * Run hybrid search over an owner's corpus.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, ChunkResult>
+     */
+    public function search(string $query, Model $owner, array $filters = [], ?int $k = null): Collection
+    {
+        return app(SearchesChunks::class)->search($query, $owner, $filters, $k);
+    }
+
+    /**
+     * Swap search for a fake returning canned results. For host agent tests.
+     *
+     * @param  iterable<int, ChunkResult>  $results
+     */
+    public static function fake(iterable $results = []): FakeSearcher
+    {
+        $fake = new FakeSearcher($results);
+
+        app()->instance(SearchesChunks::class, $fake);
+
+        return $fake;
+    }
+
     public function ingest(UploadedFile|string $file, Model $owner, ?string $disk = null): RagDocument
     {
         $disk ??= (string) config('docling-rag.storage.disk', 'local');

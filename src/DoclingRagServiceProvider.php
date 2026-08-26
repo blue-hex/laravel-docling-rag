@@ -9,8 +9,12 @@ use BlueHex\DoclingRag\Commands\ReembedCommand;
 use BlueHex\DoclingRag\Contracts\ChunksDocuments;
 use BlueHex\DoclingRag\Contracts\ConvertsUnsupportedFormats;
 use BlueHex\DoclingRag\Contracts\EmbedsChunks;
+use BlueHex\DoclingRag\Contracts\EmbedsQueries;
 use BlueHex\DoclingRag\Contracts\MapsChunks;
+use BlueHex\DoclingRag\Contracts\RanksChunks;
+use BlueHex\DoclingRag\Contracts\RetrievesChunks;
 use BlueHex\DoclingRag\Contracts\RoutesFormats;
+use BlueHex\DoclingRag\Contracts\SearchesChunks;
 use BlueHex\DoclingRag\Contracts\StoresChunkEmbeddings;
 use BlueHex\DoclingRag\Conversion\FormatRouter;
 use BlueHex\DoclingRag\Conversion\GotenbergConverter;
@@ -18,6 +22,10 @@ use BlueHex\DoclingRag\Docling\ChunkMapper;
 use BlueHex\DoclingRag\Docling\DoclingClient;
 use BlueHex\DoclingRag\Embedding\ChunkStore;
 use BlueHex\DoclingRag\Embedding\Embedder;
+use BlueHex\DoclingRag\Retrieval\HybridRetriever;
+use BlueHex\DoclingRag\Retrieval\QueryEmbedder;
+use BlueHex\DoclingRag\Retrieval\Reranker;
+use BlueHex\DoclingRag\Retrieval\Searcher;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -50,6 +58,11 @@ class DoclingRagServiceProvider extends PackageServiceProvider
         $this->app->bind(MapsChunks::class, ChunkMapper::class);
         $this->app->bind(StoresChunkEmbeddings::class, ChunkStore::class);
         $this->app->bind(EmbedsChunks::class, Embedder::class);
+
+        $this->app->bind(EmbedsQueries::class, QueryEmbedder::class);
+        $this->app->bind(RetrievesChunks::class, HybridRetriever::class);
+        $this->app->bind(RanksChunks::class, Reranker::class);
+        $this->app->bind(SearchesChunks::class, Searcher::class);
     }
 
     public function packageBooted(): void
