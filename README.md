@@ -79,7 +79,7 @@ Enable the Gotenberg fallback and publish the example Compose file:
 php artisan rag:install --with-gotenberg
 ```
 
-After embeddings land, build the search indexes (HNSW + GIN) at a time you choose:
+After embeddings land, build the search indexes (HNSW + GIN) at a time you choose — see [Search indexes](#search-indexes) for why the timing matters:
 
 ```bash
 php artisan rag:index
@@ -134,12 +134,67 @@ $document = $dataSource->ingestDocument($request->file('document'));
 
 Native Docling formats (PDF, Office, HTML, Markdown, images, …) go straight to docling-serve hybrid chunking. Anything else goes through Gotenberg → PDF when enabled; otherwise ingestion raises `UnsupportedFormatException`.
 
-Listen for host-side side effects (credits, traces, notifications):
+### Ownership and scoping
+
+Every document is stored against a polymorphic **owner**, and both ingestion and search are scoped to a single owner — retrieval's `WHERE` is exactly `owner_type = ? AND owner_id = ?`. The package has no concept of a user; it trusts the owner you pass. That has two consequences worth internalising:
+
+- **Choose the owner to match your search boundary.** Whatever model you put `HasRagDocuments` on becomes the unit of "search within this." Put it on `User` and one `Rag::search()` covers that user's entire corpus; put it on a `Project` or `Document` for a narrower corpus. A single search targets one owner — it cannot union documents across many owners, so if you need the whole-user view, the user must be the owner. To narrow *within* an owner, use `filters: ['document_ids' => [...]]`.
+
+- **Authorization is yours, not the package's.** The package runs no ownership checks — hand it an owner and it returns that owner's chunks. Always derive the owner from the authenticated user rather than from a request id, so a user can only ever reach their own:
+
+  ```php
+  public function search(Request $request, Project $project)
+  {
+      abort_if($project->user_id !== $request->user()->id, 404);
+
+      return Rag::search($request->string('q'), owner: $project);
+  }
+  ```
+
+### Tracking ingestion
+
+Ingestion runs on the queue and moves a `RagDocument` through a status lifecycle:
+
+```
+pending → converting → chunking → embedding → ready
+                                             ↘ failed   (from any stage)
+```
+
+The package fires two events, both carrying the `RagDocument`. They mark the **terminal** states — the document has finished, one way or the other:
+
+- `DocumentIngested` — the document reached `ready`; its chunks are embedded and searchable.
+- `IngestionFailed` — the document reached `failed`; read `$document->failure_reason` for why. It fires once, not on every retry.
+
+Both are dispatched from queued jobs, so your listeners run in the worker — the right place for credits, tracing, notifications, or broadcasting to the UI:
 
 ```php
 use BlueHex\DoclingRag\Events\DocumentIngested;
 use BlueHex\DoclingRag\Events\IngestionFailed;
+use Illuminate\Support\Facades\Event;
+
+Event::listen(function (DocumentIngested $event): void {
+    $document = $event->document;                 // status === DocumentStatus::Ready
+    $document->owner->notify(new DocumentReady($document));
+});
+
+Event::listen(function (IngestionFailed $event): void {
+    report(new RuntimeException($event->document->failure_reason));
+});
 ```
+
+Prefer a dedicated listener class for anything non-trivial:
+
+```php
+// app/Listeners/BroadcastIngestionStatus.php
+public function handle(DocumentIngested $event): void
+{
+    IngestionStatusChanged::dispatch($event->document->id, 'ready');
+}
+```
+
+Register it in your `EventServiceProvider` (or via auto-discovery) as you would any Laravel event.
+
+For a **live progress bar** — the interim `converting`/`chunking`/`embedding` steps — there is no per-step event; read the column instead. Poll `RagDocument::find($id)->status` (a `DocumentStatus` enum) from your frontend, or broadcast each change yourself from the terminal listeners above. `$document->status->isInFlight()` is true for every non-terminal state.
 
 Change embedding models with a deliberate re-embed, never a live mix:
 
@@ -204,6 +259,23 @@ $fake = Rag::fake([
 
 expect($fake->searches)->toHaveCount(1);
 ```
+
+### Search indexes
+
+`Rag::search()` works with no indexes at all — Postgres falls back to a sequential scan, which is fine for a few hundred chunks. At real volume, `rag:index` is what keeps retrieval fast:
+
+```bash
+php artisan rag:index
+```
+
+It creates the two indexes the hybrid query relies on, one per retriever:
+
+- an **HNSW** index on the `embedding` column (approximate nearest-neighbour, cosine) — turns vector search from a full-table distance scan into a graph walk;
+- a **GIN** index on the `tsv` column — the inverted index that makes the full-text half fast.
+
+Run it **after embeddings land**. Embedding happens asynchronously on the queue, so `embedding` is null until those jobs finish — there is nothing to index before then, and an index in place only adds write cost to every insert.
+
+Run it **at a time you choose**. Building an HNSW index reads every vector and is CPU- and memory-heavy on a large table, so it is a deliberate command rather than a migration or a per-upload hook: run it once after a bulk ingest, off-peak, and rebuild after an `rag:reembed` that changes the model or dimensions. It uses `CREATE INDEX IF NOT EXISTS`, so re-running it is safe and idempotent.
 
 ## Testing
 
