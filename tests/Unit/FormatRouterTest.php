@@ -20,6 +20,15 @@ it('routes native Docling formats without Gotenberg', function (string $filename
     'book.epub',
 ]);
 
+it('routes .markdown as native (Docling only recognizes .md)', function () {
+    expect((new FormatRouter)->route('notes.markdown'))->toBe(ConversionPath::Native);
+});
+
+it('rewrites .markdown to .md before it reaches Docling', function () {
+    expect((new FormatRouter)->normalizeFilename('notes.markdown'))->toBe('notes.md')
+        ->and((new FormatRouter)->normalizeFilename('report.pdf'))->toBe('report.pdf');
+});
+
 it('sends leftover office formats through Gotenberg when enabled', function () {
     config(['docling-rag.gotenberg.enabled' => true]);
 

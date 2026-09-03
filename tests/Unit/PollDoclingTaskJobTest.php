@@ -116,6 +116,52 @@ it('fails fast when the chunk cap is exceeded', function () {
         ->and($document->failure_reason)->toContain('chunks');
 });
 
+it('surfaces Docling\'s own document error instead of a generic no-chunks message', function () {
+    Event::fake([IngestionFailed::class]);
+
+    $this->mock(ChunksDocuments::class, function ($mock) {
+        $mock->shouldReceive('poll')->once()->andReturn(new DoclingTask('task-1', 'success'));
+        $mock->shouldReceive('result')->once()->andReturn(
+            DoclingResponses::resultWithDocumentError('File format not allowed: notes.markdown')
+        );
+    });
+
+    $document = RagDocument::factory()->create([
+        'status' => DocumentStatus::Chunking,
+        'docling_task_id' => 'task-1',
+    ]);
+
+    (new PollDoclingTaskJob($document->id, 0))->handle(
+        app(ChunksDocuments::class),
+        new ChunkMapper,
+    );
+
+    expect($document->refresh()->status)->toBe(DocumentStatus::Failed)
+        ->and($document->failure_reason)->toBe('File format not allowed: notes.markdown');
+
+    Event::assertDispatched(IngestionFailed::class);
+});
+
+it('falls back to a generic message when Docling reports no chunks and no document errors', function () {
+    $this->mock(ChunksDocuments::class, function ($mock) {
+        $mock->shouldReceive('poll')->once()->andReturn(new DoclingTask('task-1', 'success'));
+        $mock->shouldReceive('result')->once()->andReturn(DoclingResponses::result([]));
+    });
+
+    $document = RagDocument::factory()->create([
+        'status' => DocumentStatus::Chunking,
+        'docling_task_id' => 'task-1',
+    ]);
+
+    (new PollDoclingTaskJob($document->id, 0))->handle(
+        app(ChunksDocuments::class),
+        new ChunkMapper,
+    );
+
+    expect($document->refresh()->status)->toBe(DocumentStatus::Failed)
+        ->and($document->failure_reason)->toBe('Docling returned no chunks.');
+});
+
 it('marks the document failed after the poll budget is exhausted', function () {
     config(['docling-rag.docling.poll.max_attempts' => 2]);
 

@@ -9,16 +9,17 @@ use Illuminate\Support\Facades\Http;
 
 class DoclingClient implements ChunksDocuments
 {
-    public function submit(string $filename, string $contents): DoclingTask
+    /**
+     * @param  string|resource  $contents
+     * @param  array<string, mixed>  $options
+     */
+    public function submit(string $filename, mixed $contents, array $options = []): DoclingTask
     {
-        $response = $this->http()->post('/v1/chunk/hybrid/source/async', [
-            'sources' => [[
-                'kind' => 'file',
-                'base64_string' => base64_encode($contents),
-                'filename' => $filename,
-            ]],
-            'chunking_options' => $this->chunkingOptions(),
-        ]);
+        $uploadTimeout = (int) config('docling-rag.docling.upload_timeout', config('docling-rag.docling.timeout', 120));
+
+        $response = $this->http($uploadTimeout)
+            ->attach('files', $contents, $filename)
+            ->post('/v1/chunk/hybrid/file/async', $this->requestFields($options));
 
         if ($response->failed()) {
             throw new DoclingException('Docling rejected the conversion request: '.$response->body());
@@ -58,30 +59,41 @@ class DoclingClient implements ChunksDocuments
     }
 
     /**
-     * @return array<string, mixed>
+     * Form fields for the multipart /v1/chunk/hybrid/file/async request.
+     * $options wins over config('docling-rag.docling.request_options'); both
+     * use Docling's own field names (convert_*, chunking_*) verbatim.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string, string>
      */
-    protected function chunkingOptions(): array
+    protected function requestFields(array $options): array
     {
-        $options = [
-            'chunker' => 'hybrid',
-            'max_tokens' => (int) config('docling-rag.docling.chunking.max_tokens', 512),
-            'merge_peers' => (bool) config('docling-rag.docling.chunking.merge_peers', true),
-            'use_markdown_tables' => (bool) config('docling-rag.docling.chunking.use_markdown_tables', true),
-        ];
+        $merged = array_merge(
+            (array) config('docling-rag.docling.request_options', []),
+            $options
+        );
 
-        $tokenizer = config('docling-rag.docling.chunking.tokenizer');
+        $fields = [];
 
-        if (is_string($tokenizer) && $tokenizer !== '') {
-            $options['tokenizer'] = $tokenizer;
+        foreach ($merged as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $fields[$key] = match (true) {
+                is_bool($value) => $value ? 'true' : 'false',
+                is_array($value) => json_encode($value),
+                default => (string) $value,
+            };
         }
 
-        return $options;
+        return $fields;
     }
 
-    protected function http(): PendingRequest
+    protected function http(?int $timeout = null): PendingRequest
     {
         $request = Http::baseUrl(rtrim((string) config('docling-rag.docling.url'), '/'))
-            ->timeout((int) config('docling-rag.docling.timeout', 120))
+            ->timeout($timeout ?? (int) config('docling-rag.docling.timeout', 120))
             ->acceptJson();
 
         $apiKey = config('docling-rag.docling.api_key');

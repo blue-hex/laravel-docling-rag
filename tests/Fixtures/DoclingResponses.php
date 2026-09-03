@@ -52,4 +52,33 @@ class DoclingResponses
             'processing_time' => 0.42,
         ];
     }
+
+    /**
+     * A task that "succeeded" but every document was skipped, matching what
+     * Docling actually returns for e.g. an unrecognized filename extension.
+     *
+     * @return array<string, mixed>
+     */
+    public static function resultWithDocumentError(string $errorMessage): array
+    {
+        return [
+            'chunks' => [],
+            'documents' => [
+                [
+                    'filename' => 'notes.markdown',
+                    'status' => 'skipped',
+                    'errors' => [
+                        [
+                            'component_type' => 'user_input',
+                            'module_name' => '',
+                            'error_message' => $errorMessage,
+                            'category' => 'policy',
+                            'page_no' => null,
+                        ],
+                    ],
+                ],
+            ],
+            'processing_time' => 0.1,
+        ];
+    }
 }

@@ -45,6 +45,58 @@ it('submits native files to Docling and dispatches a poll job', function () {
     Queue::assertPushed(PollDoclingTaskJob::class);
 });
 
+it('sends .markdown files to Docling renamed to .md', function () {
+    Queue::fake();
+
+    $this->mock(ChunksDocuments::class, function ($mock) {
+        $mock->shouldReceive('submit')
+            ->once()
+            ->withArgs(fn ($filename) => $filename === 'notes.md')
+            ->andReturn(new DoclingTask('task-4', 'pending'));
+    });
+
+    $document = RagDocument::factory()->create([
+        'path' => 'rag/1/abc/notes.markdown',
+        'status' => DocumentStatus::Pending,
+    ]);
+
+    Storage::disk('local')->put($document->path, '# notes');
+
+    (new IngestDocumentJob($document->id))->handle(
+        app(RoutesFormats::class),
+        app(ConvertsUnsupportedFormats::class),
+        app(ChunksDocuments::class),
+    );
+
+    expect($document->refresh()->docling_task_id)->toBe('task-4');
+});
+
+it('forwards per-ingest Docling options to submit', function () {
+    Queue::fake();
+
+    $this->mock(ChunksDocuments::class, function ($mock) {
+        $mock->shouldReceive('submit')
+            ->once()
+            ->withArgs(fn ($filename, $contents, $options) => $options === ['convert_do_ocr' => false])
+            ->andReturn(new DoclingTask('task-3', 'pending'));
+    });
+
+    $document = RagDocument::factory()->create([
+        'path' => 'rag/1/abc/scan.png',
+        'status' => DocumentStatus::Pending,
+    ]);
+
+    Storage::disk('local')->put($document->path, 'png-bytes');
+
+    (new IngestDocumentJob($document->id, ['convert_do_ocr' => false]))->handle(
+        app(RoutesFormats::class),
+        app(ConvertsUnsupportedFormats::class),
+        app(ChunksDocuments::class),
+    );
+
+    expect($document->refresh()->docling_task_id)->toBe('task-3');
+});
+
 it('converts through Gotenberg when the format is not native', function () {
     config(['docling-rag.gotenberg.enabled' => true]);
     Queue::fake();
@@ -58,7 +110,7 @@ it('converts through Gotenberg when the format is not native', function () {
     $this->mock(ChunksDocuments::class, function ($mock) {
         $mock->shouldReceive('submit')
             ->once()
-            ->with('memo.pdf', '%PDF-converted')
+            ->with('memo.pdf', '%PDF-converted', [])
             ->andReturn(new DoclingTask('task-2', 'pending'));
     });
 
@@ -77,6 +129,32 @@ it('converts through Gotenberg when the format is not native', function () {
     );
 
     expect($document->refresh()->converted_via)->toBe(ConvertedVia::Gotenberg);
+});
+
+it('fails the document without contacting Docling when the file exceeds the upload limit', function () {
+    config(['docling-rag.limits.max_upload_mb' => 1]);
+
+    $this->mock(ChunksDocuments::class, function ($mock) {
+        $mock->shouldNotReceive('submit');
+    });
+
+    $document = RagDocument::factory()->create([
+        'path' => 'rag/1/abc/huge.pdf',
+        'status' => DocumentStatus::Pending,
+    ]);
+
+    Storage::disk('local')->put($document->path, str_repeat('a', 2 * 1024 * 1024));
+
+    (new IngestDocumentJob($document->id))->handle(
+        app(RoutesFormats::class),
+        app(ConvertsUnsupportedFormats::class),
+        app(ChunksDocuments::class),
+    );
+
+    $document->refresh();
+
+    expect($document->status)->toBe(DocumentStatus::Failed)
+        ->and($document->failure_reason)->toContain('limit is 1 MB');
 });
 
 it('fails the document when Gotenberg returns a ZIP', function () {

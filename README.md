@@ -97,10 +97,14 @@ Publish `config/docling-rag.php` and set:
 
 - `DOCLING_URL` — docling-serve base URL (default `http://localhost:5001`)
 - `DOCLING_API_KEY` — sent as `X-Api-Key` when the server requires it
+- `DOCLING_TIMEOUT` — timeout in seconds for poll/result requests (default `120`)
+- `DOCLING_UPLOAD_TIMEOUT` — separate, longer timeout for the upload itself (default `300`) — a large file takes longer to transfer than a status poll does
+- `DOCLING_RAG_MAX_UPLOAD_MB` — reject a source file before it's read into memory or sent to Docling (default `100`, `0` disables)
 - `DOCLING_RAG_GOTENBERG_ENABLED` / `GOTENBERG_URL` — fallback converter
 - `DOCLING_RAG_EMBEDDING_MODEL` / `DOCLING_RAG_EMBEDDING_DIMENSIONS` — default `text-embedding-3-small` / `1536`
 - `DOCLING_RAG_EMBEDDING_HALFVEC` — use `halfvec` when you need more than 2000 dimensions
 - `DOCLING_RAG_MAX_PAGES` / `DOCLING_RAG_MAX_CHUNKS` — fail fast instead of burning an embedding bill
+- `DOCLING_DO_OCR` / `DOCLING_CHUNK_MAX_TOKENS` / `DOCLING_CHUNK_TOKENIZER` — defaults for `docling.request_options` (see [Docling request options](#docling-request-options))
 - `DOCLING_RAG_RETRIEVAL_K` — chunks returned per search (default `8`)
 - `DOCLING_RAG_RETRIEVAL_PER_DOCUMENT_CAP` — max chunks from one document (default `3`, `0` disables)
 - `DOCLING_RAG_RERANK_ENABLED` / `DOCLING_RAG_RERANK_PROVIDER` / `DOCLING_RAG_RERANK_MODEL` — optional cross-encoder rerank of the top candidates
@@ -132,7 +136,37 @@ $document = Rag::ingest($request->file('document'), owner: $dataSource);
 $document = $dataSource->ingestDocument($request->file('document'));
 ```
 
-Native Docling formats (PDF, Office, HTML, Markdown, images, …) go straight to docling-serve hybrid chunking. Anything else goes through Gotenberg → PDF when enabled; otherwise ingestion raises `UnsupportedFormatException`.
+Native Docling formats (PDF, Office, HTML, Markdown, images, …) go straight to docling-serve hybrid chunking, streamed from disk rather than buffered into memory. Anything else goes through Gotenberg → PDF when enabled; otherwise ingestion raises `UnsupportedFormatException`. A `.markdown` extension is resubmitted to Docling as `.md` automatically — Docling only recognises `.md`, so this is transparent to callers.
+
+### Docling request options
+
+`config('docling-rag.docling.request_options')` sets the default fields sent to Docling on every ingest — OCR, table mode, page range, tokenizer, anything from [docling-serve's `/v1/chunk/hybrid/file/async` schema](https://github.com/docling-project/docling-serve), keyed by its exact field name (`convert_*`, `chunking_*`):
+
+```php
+// config/docling-rag.php
+'docling' => [
+    'request_options' => [
+        'convert_do_ocr' => true,
+        'chunking_max_tokens' => 512,
+        'chunking_merge_peers' => true,
+        'chunking_use_markdown_tables' => true,
+    ],
+],
+```
+
+Override per ingest — merged over the config default, per-call wins:
+
+```php
+// e.g. skip OCR for a document you know is already text, or force it for a scan
+$dataSource->ingestDocument($file, options: ['convert_do_ocr' => false]);
+
+Rag::ingest($file, owner: $dataSource, options: [
+    'convert_table_mode' => 'fast',
+    'convert_page_range' => [1, 10],
+]);
+```
+
+Options are not persisted — a manual re-ingest of a previously failed document (`Rag::ingest()` called again with the same bytes) needs `options` passed again if you want anything other than the config default.
 
 ### Ownership and scoping
 
@@ -163,7 +197,7 @@ pending → converting → chunking → embedding → ready
 The package fires two events, both carrying the `RagDocument`. They mark the **terminal** states — the document has finished, one way or the other:
 
 - `DocumentIngested` — the document reached `ready`; its chunks are embedded and searchable.
-- `IngestionFailed` — the document reached `failed`; read `$document->failure_reason` for why. It fires once, not on every retry.
+- `IngestionFailed` — the document reached `failed`; read `$document->failure_reason` for why. It fires once, not on every retry. When Docling itself rejected or skipped the document, `failure_reason` carries Docling's own message (e.g. an unrecognised format) rather than a generic "no chunks" fallback.
 
 Both are dispatched from queued jobs, so your listeners run in the worker — the right place for credits, tracing, notifications, or broadcasting to the UI:
 

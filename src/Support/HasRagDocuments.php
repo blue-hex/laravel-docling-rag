@@ -21,8 +21,11 @@ trait HasRagDocuments
         return $this->morphMany(RagDocument::class, 'owner');
     }
 
-    public function ingestDocument(UploadedFile|string $file, ?string $disk = null): RagDocument
+    /**
+     * @param  array<string, mixed>  $options  Raw Docling request fields (convert_*, chunking_*).
+     */
+    public function ingestDocument(UploadedFile|string $file, ?string $disk = null, array $options = []): RagDocument
     {
-        return Rag::ingest($file, owner: $this, disk: $disk);
+        return Rag::ingest($file, owner: $this, disk: $disk, options: $options);
     }
 }

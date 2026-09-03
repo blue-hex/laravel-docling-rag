@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * @method static RagDocument ingest(UploadedFile|string $file, Model $owner, ?string $disk = null)
+ * @method static RagDocument ingest(UploadedFile|string $file, Model $owner, ?string $disk = null, array $options = [])
  * @method static Collection<int, ChunkResult> search(string $query, Model $owner, array $filters = [], ?int $k = null)
  * @method static FakeSearcher fake(iterable $results = [])
  *

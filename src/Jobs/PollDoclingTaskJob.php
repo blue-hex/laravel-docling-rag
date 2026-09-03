@@ -60,7 +60,7 @@ class PollDoclingTaskJob implements ShouldQueue
         $chunks = $mapper->map($payload['chunks'] ?? []);
 
         if ($chunks === []) {
-            $document->markFailed('Docling returned no chunks.');
+            $document->markFailed($this->documentErrorMessage($payload) ?? 'Docling returned no chunks.');
 
             return;
         }
@@ -108,6 +108,36 @@ class PollDoclingTaskJob implements ShouldQueue
         RagDocument::query()->find($this->documentId)?->markFailed(
             $exception?->getMessage() ?? 'Docling poll job failed.'
         );
+    }
+
+    /**
+     * Surface Docling's own per-document error (e.g. "File format not
+     * allowed: notes.markdown") instead of a generic "no chunks" message
+     * when the task itself reports success but skipped every document.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function documentErrorMessage(array $payload): ?string
+    {
+        $messages = [];
+
+        foreach ((array) ($payload['documents'] ?? []) as $doc) {
+            if (! is_array($doc)) {
+                continue;
+            }
+
+            foreach ((array) ($doc['errors'] ?? []) as $error) {
+                $message = is_array($error) ? ($error['error_message'] ?? null) : null;
+
+                if (is_string($message) && $message !== '') {
+                    $messages[] = $message;
+                }
+            }
+        }
+
+        $messages = array_unique($messages);
+
+        return $messages === [] ? null : implode(' ', $messages);
     }
 
     /**

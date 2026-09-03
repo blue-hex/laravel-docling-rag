@@ -25,6 +25,16 @@ class FormatRouter implements RoutesFormats
         'rtf', 'txt', 'wpd', 'wps', 'pub', 'vsd', 'fodt', 'fods', 'fodp',
     ];
 
+    /**
+     * Extensions we accept that Docling itself doesn't recognize under that
+     * name — mapped to the extension Docling actually expects before upload.
+     *
+     * @var array<string, string>
+     */
+    public const EXTENSION_ALIASES = [
+        'markdown' => 'md',
+    ];
+
     public function route(string $filename, ?string $mime = null): ConversionPath
     {
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -49,6 +59,22 @@ class FormatRouter implements RoutesFormats
         throw new UnsupportedFormatException(
             "Format [{$extension}] is not supported for ingestion."
         );
+    }
+
+    /**
+     * Rewrite the filename's extension if Docling wouldn't recognize it as-is
+     * (see EXTENSION_ALIASES). Only meaningful for the native (non-Gotenberg)
+     * path — Gotenberg-converted files are already renamed to .pdf.
+     */
+    public function normalizeFilename(string $filename): string
+    {
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if (! isset(self::EXTENSION_ALIASES[$extension])) {
+            return $filename;
+        }
+
+        return pathinfo($filename, PATHINFO_FILENAME).'.'.self::EXTENSION_ALIASES[$extension];
     }
 
     protected function looksLikeOfficeMime(?string $mime): bool

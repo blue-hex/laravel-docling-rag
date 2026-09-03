@@ -6,7 +6,12 @@ use BlueHex\DoclingRag\Docling\DoclingTask;
 
 interface ChunksDocuments
 {
-    public function submit(string $filename, string $contents): DoclingTask;
+    /**
+     * @param  string|resource  $contents
+     * @param  array<string, mixed>  $options  Raw Docling request fields (convert_*, chunking_*),
+     *                                          merged over config('docling-rag.docling.request_options').
+     */
+    public function submit(string $filename, mixed $contents, array $options = []): DoclingTask;
 
     public function poll(string $taskId): DoclingTask;
 

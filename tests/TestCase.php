@@ -18,6 +18,15 @@ class TestCase extends Orchestra
     {
         parent::setUp();
 
+        // Set after parent::setUp() (providers already registered and merged
+        // their config file) — setting these in getEnvironmentSetUp() instead
+        // would clobber the rest of the package's `docling` config block,
+        // since Laravel's mergeConfigFrom() only merges one level deep.
+        config()->set('docling-rag.docling.url', 'http://docling.test');
+        config()->set('docling-rag.gotenberg.enabled', false);
+        config()->set('docling-rag.gotenberg.url', 'http://gotenberg.test');
+        config()->set('docling-rag.storage.disk', 'local');
+
         Factory::guessFactoryNamesUsing(
             fn (string $modelName) => 'BlueHex\\DoclingRag\\Database\\Factories\\'.class_basename($modelName).'Factory'
         );
@@ -54,9 +63,5 @@ class TestCase extends Orchestra
             'foreign_key_constraints' => true,
         ]);
         config()->set('queue.default', 'sync');
-        config()->set('docling-rag.docling.url', 'http://docling.test');
-        config()->set('docling-rag.gotenberg.enabled', false);
-        config()->set('docling-rag.gotenberg.url', 'http://gotenberg.test');
-        config()->set('docling-rag.storage.disk', 'local');
     }
 }

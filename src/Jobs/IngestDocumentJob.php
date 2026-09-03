@@ -33,7 +33,11 @@ class IngestDocumentJob implements ShouldQueue
         return [5, 15, 30];
     }
 
-    public function __construct(public int $documentId) {}
+    /**
+     * @param  array<string, mixed>  $doclingOptions  Raw Docling request fields (convert_*, chunking_*),
+     *                                                 merged over config('docling-rag.docling.request_options').
+     */
+    public function __construct(public int $documentId, public array $doclingOptions = []) {}
 
     public function handle(
         RoutesFormats $router,
@@ -43,10 +47,21 @@ class IngestDocumentJob implements ShouldQueue
         $document = RagDocument::query()->findOrFail($this->documentId);
 
         try {
-            $contents = Storage::disk($document->disk)->get($document->path);
+            $disk = Storage::disk($document->disk);
 
-            if ($contents === null) {
+            if (! $disk->exists($document->path)) {
                 $document->markFailed("Source file [{$document->path}] is missing.");
+
+                return;
+            }
+
+            $maxUploadMb = (int) config('docling-rag.limits.max_upload_mb', 100);
+            $sizeBytes = $disk->size($document->path);
+
+            if ($maxUploadMb > 0 && $sizeBytes > $maxUploadMb * 1024 * 1024) {
+                $document->markFailed(
+                    sprintf('Source file is %.1f MB; limit is %d MB.', $sizeBytes / (1024 * 1024), $maxUploadMb)
+                );
 
                 return;
             }
@@ -60,19 +75,41 @@ class IngestDocumentJob implements ShouldQueue
                     'converted_via' => ConvertedVia::Gotenberg,
                 ]);
 
+                $contents = $disk->get($document->path);
+
+                if ($contents === null) {
+                    $document->markFailed("Source file [{$document->path}] is missing.");
+
+                    return;
+                }
+
                 $converted = $converter->convert($filename, $contents);
                 $filename = $converted->filename;
-                $contents = $converted->contents;
+                $submission = $converted->contents;
             } else {
                 $document->update([
                     'status' => DocumentStatus::Converting,
                     'converted_via' => ConvertedVia::Native,
                 ]);
+
+                // Rewrite extensions Docling wouldn't recognize as-is (e.g.
+                // .markdown -> .md) before it sees the filename.
+                $filename = $router->normalizeFilename($filename);
+
+                // Stream straight from disk instead of buffering the whole file
+                // into a PHP string — keeps large uploads out of worker memory.
+                $submission = $disk->readStream($document->path);
+
+                if ($submission === null) {
+                    $document->markFailed("Source file [{$document->path}] is missing.");
+
+                    return;
+                }
             }
 
             $document->update(['status' => DocumentStatus::Chunking]);
 
-            $task = $docling->submit($filename, $contents);
+            $task = $docling->submit($filename, $submission, $this->doclingOptions);
 
             $document->update(['docling_task_id' => $task->taskId]);
 

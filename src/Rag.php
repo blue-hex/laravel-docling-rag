@@ -41,7 +41,11 @@ class Rag
         return $fake;
     }
 
-    public function ingest(UploadedFile|string $file, Model $owner, ?string $disk = null): RagDocument
+    /**
+     * @param  array<string, mixed>  $options  Raw Docling request fields (convert_*, chunking_*),
+     *                                          merged over config('docling-rag.docling.request_options').
+     */
+    public function ingest(UploadedFile|string $file, Model $owner, ?string $disk = null, array $options = []): RagDocument
     {
         $disk ??= (string) config('docling-rag.storage.disk', 'local');
         $prefix = trim((string) config('docling-rag.storage.path', 'rag'), '/');
@@ -67,7 +71,7 @@ class Rag
                     'docling_task_id' => null,
                 ])->save();
 
-                IngestDocumentJob::dispatch($existing->id);
+                IngestDocumentJob::dispatch($existing->id, $options);
 
                 return $existing->refresh();
             }
@@ -87,7 +91,7 @@ class Rag
             'status' => DocumentStatus::Pending,
         ]);
 
-        IngestDocumentJob::dispatch($document->id);
+        IngestDocumentJob::dispatch($document->id, $options);
 
         return $document;
     }

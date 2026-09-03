@@ -5,15 +5,24 @@ return [
         'url' => env('DOCLING_URL', 'http://localhost:5001'),
         'api_key' => env('DOCLING_API_KEY'),
         'timeout' => (int) env('DOCLING_TIMEOUT', 120),
+        // Separate, longer timeout for the upload itself — a large file takes
+        // longer to transfer than a status poll or result fetch does.
+        'upload_timeout' => (int) env('DOCLING_UPLOAD_TIMEOUT', 300),
         'poll' => [
             'max_attempts' => (int) env('DOCLING_POLL_MAX_ATTEMPTS', 30),
             'backoff' => [5, 10, 20, 40, 60],
         ],
-        'chunking' => [
-            'max_tokens' => (int) env('DOCLING_CHUNK_MAX_TOKENS', 512),
-            'merge_peers' => true,
-            'use_markdown_tables' => true,
-            'tokenizer' => env('DOCLING_CHUNK_TOKENIZER'),
+        // Default fields sent to Docling's /v1/chunk/hybrid/file/async request.
+        // Use the exact field names from that endpoint's schema (convert_* and
+        // chunking_*) — anything valid there is valid here. Omitted keys fall
+        // back to Docling's own defaults. Override per-call via
+        // Rag::ingest($file, $owner, options: [...]).
+        'request_options' => [
+            'convert_do_ocr' => (bool) env('DOCLING_DO_OCR', true),
+            'chunking_max_tokens' => (int) env('DOCLING_CHUNK_MAX_TOKENS', 512),
+            'chunking_merge_peers' => true,
+            'chunking_use_markdown_tables' => true,
+            'chunking_tokenizer' => env('DOCLING_CHUNK_TOKENIZER'),
         ],
     ],
 
@@ -33,6 +42,7 @@ return [
     'limits' => [
         'max_pages' => (int) env('DOCLING_RAG_MAX_PAGES', 200),
         'max_chunks' => (int) env('DOCLING_RAG_MAX_CHUNKS', 4000),
+        'max_upload_mb' => (int) env('DOCLING_RAG_MAX_UPLOAD_MB', 100),
     ],
 
     'storage' => [
