@@ -43,7 +43,7 @@ class Rag
 
     /**
      * @param  array<string, mixed>  $options  Raw Docling request fields (convert_*, chunking_*),
-     *                                          merged over config('docling-rag.docling.request_options').
+     *                                         merged over config('docling-rag.docling.request_options').
      */
     public function ingest(UploadedFile|string $file, Model $owner, ?string $disk = null, array $options = []): RagDocument
     {

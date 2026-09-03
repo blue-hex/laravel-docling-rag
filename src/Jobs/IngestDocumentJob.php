@@ -35,7 +35,7 @@ class IngestDocumentJob implements ShouldQueue
 
     /**
      * @param  array<string, mixed>  $doclingOptions  Raw Docling request fields (convert_*, chunking_*),
-     *                                                 merged over config('docling-rag.docling.request_options').
+     *                                                merged over config('docling-rag.docling.request_options').
      */
     public function __construct(public int $documentId, public array $doclingOptions = []) {}
 
