@@ -319,6 +319,18 @@ composer test
 
 The fast suite uses SQLite, `Http::fake()`, and `Embeddings::fake()`. Search correctness (RRF ordering, owner scoping, filters) needs real pgvector — those tests are tagged `integration` and skip unless `RAG_PG_HOST` (and the other `RAG_PG_*` vars) point at a Postgres + pgvector database. Set `DOCLING_LIVE_URL` to run the opt-in live Docling contract test.
 
+## Versioning
+
+This package follows [Semantic Versioning 2.0](https://semver.org/). The first public release is **0.1.0**. While the major version is 0, the public API is not frozen.
+
+- **Patch (`0.y.z`):** backward-compatible bug fix or additive change that does not break callers.
+- **Minor (`0.(y+1).0`):** any breaking change to the public API.
+- **1.0.0:** only when `Rag::ingest` / `Rag::search` / `Rag::fake`, `HasRagDocuments`, `SearchDocuments`, `DocumentIngested` / `IngestionFailed`, and the published tables are a freeze. Stay on 0.x while `laravel/ai` is still a 0.x constraint; a breaking bump there will likely force one here.
+
+The contract is the `Rag` facade, `HasRagDocuments`, `SearchDocuments::for()`, `ChunkResult` properties, the two events, published config keys, and the `rag_documents` / `rag_chunks` schema. Internal jobs, Docling HTTP details, and retrieval SQL may change in a patch.
+
+Composer has no `version` field. Packagist reads git tags. Cut a tag named `0.1.0` (no `v` prefix) and a GitHub Release whose **name** is `0.1.0` so [CHANGELOG](CHANGELOG.md) stays in Keep a Changelog form. Submit the GitHub repo to Packagist once; later tags sync on their own.
+
 ## Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
